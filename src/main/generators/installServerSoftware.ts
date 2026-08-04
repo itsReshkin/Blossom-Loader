@@ -1,0 +1,268 @@
+import { existsSync } from 'fs'
+import { copyFile, mkdir, readdir, readFile, writeFile } from 'fs/promises'
+import { join } from 'path'
+import type { InstallProgressEvent } from '@shared/installProgress'
+import type { ServerSoftwareId } from '@shared/serverSoftware'
+import { getServerDownload as getVanillaDownload } from '../services/mojangService'
+import { getLatestBuildDownload as getPaperDownload } from '../services/paperService'
+import {
+  getLatestStableLoaderVersion,
+  getLatestInstaller as getFabricInstaller
+} from '../services/fabricService'
+import { getRecommendedForgeVersion, getInstallerUrl as getForgeInstallerUrl } from '../services/forgeService'
+import { BUILD_TOOLS_URL } from '../services/spigotService'
+import { checkGitAvailable, resolveJavaExecutable } from '../services/javaService'
+import { fetchSha1Sidecar } from '../services/mavenChecksum'
+import { downloadFile } from '../services/downloadService'
+import { runProcess } from '../services/processRunner'
+
+export interface InstallServerSoftwareParams {
+  softwareId: ServerSoftwareId
+  minecraftVersion: string
+  projectPath: string
+  memoryGB: number
+  cacheRoot: string
+  onProgress: (event: InstallProgressEvent) => void
+}
+
+export interface InstallServerSoftwareResult {
+  windowsLaunchCommand: string
+  unixLaunchCommand: string
+}
+
+interface SoftwareContext {
+  minecraftVersion: string
+  projectPath: string
+  memoryGB: number
+  cacheRoot: string
+  onProgress: (event: InstallProgressEvent) => void
+}
+
+interface JavaSoftwareContext extends SoftwareContext {
+  /** The `java` command to spawn locally for installers/BuildTools — system `java` or a
+   * downloaded portable runtime's absolute path. Never used in generated start scripts, which
+   * always reference the literal `java` command since they run on the eventual host, not here. */
+  javaCommand: string
+}
+
+const LOG_THROTTLE_MS = 150
+
+function throttledLogger(onProgress: (event: InstallProgressEvent) => void): (line: string) => void {
+  let lastSent = 0
+  return (line: string) => {
+    const now = Date.now()
+    if (now - lastSent >= LOG_THROTTLE_MS) {
+      lastSent = now
+      onProgress({ kind: 'log', line })
+    }
+  }
+}
+
+function genericLaunchCommand(jarName: string, memoryGB: number): string {
+  return `java -Xms${memoryGB}G -Xmx${memoryGB}G -jar "${jarName}" nogui`
+}
+
+async function installVanilla(ctx: SoftwareContext): Promise<InstallServerSoftwareResult> {
+  const { minecraftVersion, projectPath, memoryGB, cacheRoot, onProgress } = ctx
+  onProgress({ kind: 'status', message: 'Fetching Minecraft server download info...' })
+  const info = await getVanillaDownload(minecraftVersion)
+  const dest = join(cacheRoot, 'server-jars', `vanilla-${minecraftVersion}.jar`)
+
+  if (!existsSync(dest)) {
+    await downloadFile(info.url, dest, { algorithm: 'sha1', value: info.sha1 }, (progress) =>
+      onProgress({ kind: 'download', label: `Minecraft ${minecraftVersion}`, ...progress })
+    )
+  }
+
+  await copyFile(dest, join(projectPath, 'server.jar'))
+  const command = genericLaunchCommand('server.jar', memoryGB)
+  return { windowsLaunchCommand: command, unixLaunchCommand: command }
+}
+
+async function installPaper(ctx: SoftwareContext): Promise<InstallServerSoftwareResult> {
+  const { minecraftVersion, projectPath, memoryGB, cacheRoot, onProgress } = ctx
+  onProgress({ kind: 'status', message: 'Fetching Paper build info...' })
+  const info = await getPaperDownload(minecraftVersion)
+  const dest = join(cacheRoot, 'server-jars', info.filename)
+
+  if (!existsSync(dest)) {
+    await downloadFile(info.url, dest, { algorithm: 'sha256', value: info.sha256 }, (progress) =>
+      onProgress({ kind: 'download', label: `Paper ${minecraftVersion}`, ...progress })
+    )
+  }
+
+  await copyFile(dest, join(projectPath, 'server.jar'))
+  const command = genericLaunchCommand('server.jar', memoryGB)
+  return { windowsLaunchCommand: command, unixLaunchCommand: command }
+}
+
+async function installFabric(ctx: JavaSoftwareContext): Promise<InstallServerSoftwareResult> {
+  const { minecraftVersion, projectPath, memoryGB, cacheRoot, javaCommand, onProgress } = ctx
+  onProgress({ kind: 'status', message: 'Resolving Fabric loader version...' })
+  const loaderVersion = await getLatestStableLoaderVersion(minecraftVersion)
+  const installerInfo = await getFabricInstaller()
+
+  const installerPath = join(cacheRoot, 'installers', `fabric-installer-${installerInfo.version}.jar`)
+  if (!existsSync(installerPath)) {
+    onProgress({ kind: 'status', message: 'Downloading Fabric installer...' })
+    const sha1 = await fetchSha1Sidecar(installerInfo.url)
+    await downloadFile(
+      installerInfo.url,
+      installerPath,
+      sha1 ? { algorithm: 'sha1', value: sha1 } : null,
+      (progress) => onProgress({ kind: 'download', label: 'Fabric installer', ...progress })
+    )
+  }
+
+  onProgress({ kind: 'status', message: 'Installing Fabric server...' })
+  await runProcess(
+    javaCommand,
+    [
+      '-jar',
+      installerPath,
+      'server',
+      '-mcversion',
+      minecraftVersion,
+      '-loader',
+      loaderVersion,
+      '-downloadMinecraft',
+      '-dir',
+      projectPath
+    ],
+    { cwd: projectPath, onLine: throttledLogger(onProgress) }
+  )
+
+  const command = genericLaunchCommand('fabric-server-launch.jar', memoryGB)
+  return { windowsLaunchCommand: command, unixLaunchCommand: command }
+}
+
+async function patchForgeMemoryArgs(projectPath: string, memoryGB: number): Promise<void> {
+  const argsPath = join(projectPath, 'user_jvm_args.txt')
+  if (!existsSync(argsPath)) return
+
+  const content = await readFile(argsPath, 'utf-8')
+  const lines = content
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('-Xmx') && !line.trim().startsWith('-Xms'))
+  lines.push(`-Xms${memoryGB}G`, `-Xmx${memoryGB}G`)
+  await writeFile(argsPath, lines.join('\n'), 'utf-8')
+}
+
+async function installForge(ctx: JavaSoftwareContext): Promise<InstallServerSoftwareResult> {
+  const { minecraftVersion, projectPath, memoryGB, cacheRoot, javaCommand, onProgress } = ctx
+  onProgress({ kind: 'status', message: 'Resolving Forge version...' })
+  const forgeVersion = await getRecommendedForgeVersion(minecraftVersion)
+  const installerUrl = getForgeInstallerUrl(minecraftVersion, forgeVersion)
+
+  const installerPath = join(
+    cacheRoot,
+    'installers',
+    `forge-${minecraftVersion}-${forgeVersion}-installer.jar`
+  )
+  if (!existsSync(installerPath)) {
+    onProgress({ kind: 'status', message: 'Downloading Forge installer...' })
+    const sha1 = await fetchSha1Sidecar(installerUrl)
+    await downloadFile(
+      installerUrl,
+      installerPath,
+      sha1 ? { algorithm: 'sha1', value: sha1 } : null,
+      (progress) => onProgress({ kind: 'download', label: 'Forge installer', ...progress })
+    )
+  }
+
+  onProgress({
+    kind: 'status',
+    message: 'Installing Forge server (this patches every Minecraft class, it takes a minute)...'
+  })
+  await runProcess(javaCommand, ['-jar', installerPath, '--installServer', projectPath], {
+    cwd: projectPath,
+    onLine: throttledLogger(onProgress)
+  })
+
+  await patchForgeMemoryArgs(projectPath, memoryGB)
+
+  return {
+    windowsLaunchCommand: 'call run.bat nogui',
+    unixLaunchCommand: 'sh run.sh nogui'
+  }
+}
+
+async function installSpigot(ctx: JavaSoftwareContext): Promise<InstallServerSoftwareResult> {
+  const { minecraftVersion, projectPath, memoryGB, cacheRoot, javaCommand, onProgress } = ctx
+  const gitCheck = await checkGitAvailable()
+  if (!gitCheck.available) {
+    throw new Error('Git is required to build Spigot but was not found. Install Git and try again.')
+  }
+
+  const buildDir = join(cacheRoot, 'spigot-build', minecraftVersion)
+  await mkdir(buildDir, { recursive: true })
+
+  const buildToolsPath = join(buildDir, 'BuildTools.jar')
+  if (!existsSync(buildToolsPath)) {
+    onProgress({ kind: 'status', message: 'Downloading BuildTools...' })
+    await downloadFile(BUILD_TOOLS_URL, buildToolsPath, null, (progress) =>
+      onProgress({ kind: 'download', label: 'BuildTools', ...progress })
+    )
+  }
+
+  onProgress({
+    kind: 'status',
+    message: 'Building Spigot from source (this compiles Minecraft and can take 5-15 minutes)...'
+  })
+  await runProcess(javaCommand, ['-jar', 'BuildTools.jar', '--rev', minecraftVersion], {
+    cwd: buildDir,
+    // BuildTools clones several deeply nested Java source trees. On Windows, without
+    // core.longpaths=true, Git silently fails to write files whose full path exceeds the 260
+    // character MAX_PATH limit ("Filename too long") — the checkout then looks "dirty" relative
+    // to the patch baseline because some files never got written, and patch application fails.
+    // core.autocrlf=false avoids a separate, unrelated line-ending mismatch on some forked repos.
+    // Overriding these for this process only avoids touching the user's global Git config.
+    env: {
+      GIT_CONFIG_COUNT: '2',
+      GIT_CONFIG_KEY_0: 'core.autocrlf',
+      GIT_CONFIG_VALUE_0: 'false',
+      GIT_CONFIG_KEY_1: 'core.longpaths',
+      GIT_CONFIG_VALUE_1: 'true'
+    },
+    onLine: throttledLogger(onProgress)
+  })
+
+  const builtFiles = await readdir(buildDir)
+  const spigotJar = builtFiles.find((name) => name.startsWith('spigot-') && name.endsWith('.jar'))
+  if (!spigotJar) {
+    throw new Error('BuildTools finished but no spigot-*.jar was produced. Check the build log for errors.')
+  }
+
+  await copyFile(join(buildDir, spigotJar), join(projectPath, 'server.jar'))
+  const command = genericLaunchCommand('server.jar', memoryGB)
+  return { windowsLaunchCommand: command, unixLaunchCommand: command }
+}
+
+export async function installServerSoftware(
+  params: InstallServerSoftwareParams
+): Promise<InstallServerSoftwareResult> {
+  const { softwareId } = params
+
+  if (softwareId === 'vanilla' || softwareId === 'paper') {
+    return softwareId === 'vanilla' ? installVanilla(params) : installPaper(params)
+  }
+
+  const javaCommand = await resolveJavaExecutable(params.cacheRoot)
+  if (!javaCommand) {
+    throw new Error(
+      `Java is required to install ${softwareId} but was not found on this machine. Download it from the Server Software step, or install a recent Java (e.g. Temurin 21) yourself and try again.`
+    )
+  }
+  const javaCtx: JavaSoftwareContext = { ...params, javaCommand }
+
+  switch (softwareId) {
+    case 'fabric':
+      return installFabric(javaCtx)
+    case 'forge':
+      return installForge(javaCtx)
+    case 'spigot':
+      return installSpigot(javaCtx)
+    default:
+      throw new Error(`Unknown server software: ${softwareId as string}`)
+  }
+}

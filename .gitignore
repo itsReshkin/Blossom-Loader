@@ -1,0 +1,9 @@
+node_modules/
+out/
+dist/
+dist-electron/
+release/
+*.local
+.env
+.claude/settings.local.json
+*.tsbuildinfo
