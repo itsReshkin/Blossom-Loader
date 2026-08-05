@@ -36,11 +36,12 @@ const api = {
   },
   showItemInFolder: (path: string): Promise<void> =>
     ipcRenderer.invoke(IpcChannel.ShellShowItemInFolder, path),
-  checkPrerequisites: (): Promise<PrerequisitesCheckResult> =>
-    ipcRenderer.invoke(IpcChannel.CheckPrerequisites),
+  checkPrerequisites: (minecraftVersion: string): Promise<PrerequisitesCheckResult> =>
+    ipcRenderer.invoke(IpcChannel.CheckPrerequisites, minecraftVersion),
   searchPlugins: (params: PluginSearchParams): Promise<PluginSearchResult> =>
     ipcRenderer.invoke(IpcChannel.SearchPlugins, params),
-  downloadJava: (): Promise<void> => ipcRenderer.invoke(IpcChannel.DownloadJava),
+  downloadJava: (minecraftVersion: string): Promise<void> =>
+    ipcRenderer.invoke(IpcChannel.DownloadJava, minecraftVersion),
   checkForUpdates: (): Promise<void> => ipcRenderer.invoke(IpcChannel.UpdateCheck),
   downloadUpdate: (): Promise<void> => ipcRenderer.invoke(IpcChannel.UpdateDownload),
   installUpdate: (): Promise<void> => ipcRenderer.invoke(IpcChannel.UpdateInstall),

@@ -11,12 +11,13 @@ import {
 } from '../services/fabricService'
 import { getRecommendedForgeVersion, getInstallerUrl as getForgeInstallerUrl } from '../services/forgeService'
 import { BUILD_TOOLS_URL } from '../services/spigotService'
+import { requiredJavaVersion } from '@shared/minecraftJava'
 import {
   checkGitAvailable,
-  checkSystemJavaAvailable,
   downloadPortableJava,
   getPortableJavaExecutable,
-  isPortableJavaInstalled
+  isPortableJavaInstalled,
+  isSystemJavaSufficient
 } from '../services/javaService'
 import { fetchSha1Sidecar } from '../services/mavenChecksum'
 import { downloadFile } from '../services/downloadService'
@@ -85,19 +86,28 @@ function genericLaunchCommand(jarName: string, memoryGB: number): string {
  */
 async function ensureJavaRuntime(
   cacheRoot: string,
+  minecraftVersion: string,
   onProgress: (event: InstallProgressEvent) => void
 ): Promise<{ javaCommand: string; portableJavaBinDir: string | null }> {
-  const system = await checkSystemJavaAvailable()
-  if (system.available) return { javaCommand: 'java', portableJavaBinDir: null }
+  const required = requiredJavaVersion(minecraftVersion)
 
-  if (!isPortableJavaInstalled(cacheRoot)) {
-    onProgress({ kind: 'status', message: 'No Java found on this machine. Downloading a runtime...' })
-    await downloadPortableJava(cacheRoot, (progress) =>
-      onProgress({ kind: 'download', label: 'Java runtime', ...progress })
+  // An installed Java that is too old is no better than none: the server refuses to start and
+  // reports the requirement itself, so the version has to be compared, not just its presence.
+  if (await isSystemJavaSufficient(required)) {
+    return { javaCommand: 'java', portableJavaBinDir: null }
+  }
+
+  if (!isPortableJavaInstalled(cacheRoot, required)) {
+    onProgress({
+      kind: 'status',
+      message: `Minecraft ${minecraftVersion} needs Java ${required}. Downloading it...`
+    })
+    await downloadPortableJava(cacheRoot, required, (progress) =>
+      onProgress({ kind: 'download', label: `Java ${required} runtime`, ...progress })
     )
   }
 
-  const javaCommand = getPortableJavaExecutable(cacheRoot)
+  const javaCommand = getPortableJavaExecutable(cacheRoot, required)
   return { javaCommand, portableJavaBinDir: dirname(javaCommand) }
 }
 
@@ -286,8 +296,10 @@ export async function installServerSoftware(
 ): Promise<InstallServerSoftwareResult> {
   const { softwareId } = params
 
-  const { javaCommand, portableJavaBinDir } = await ensureJavaRuntime(params.cacheRoot, (event) =>
-    params.onProgress(event)
+  const { javaCommand, portableJavaBinDir } = await ensureJavaRuntime(
+    params.cacheRoot,
+    params.minecraftVersion,
+    (event) => params.onProgress(event)
   )
 
   const result = await installWith(softwareId, { ...params, javaCommand })

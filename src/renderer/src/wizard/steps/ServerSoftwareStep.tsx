@@ -16,13 +16,15 @@ export function ServerSoftwareStep() {
   const [javaDownloadError, setJavaDownloadError] = useState<string | null>(null)
 
   const softwareId = serverSoftware.softwareId
+  const minecraftVersion = serverSoftware.minecraftVersion
 
   const refreshPrerequisites = () => {
-    if (!window.blossom) return
-    window.blossom.checkPrerequisites().then(setPrerequisites)
+    if (!window.blossom || !minecraftVersion) return
+    window.blossom.checkPrerequisites(minecraftVersion).then(setPrerequisites)
   }
 
-  useEffect(refreshPrerequisites, [])
+  // The Java requirement depends on the chosen Minecraft version, so re-check when it changes.
+  useEffect(refreshPrerequisites, [minecraftVersion])
 
   useEffect(() => {
     if (!softwareId || !window.blossom) return
@@ -59,12 +61,12 @@ export function ServerSoftwareStep() {
     updateAnswers({ serverSoftware: { ...serverSoftware, minecraftVersion: version } })
 
   const handleDownloadJava = async () => {
-    if (!window.blossom) return
+    if (!window.blossom || !minecraftVersion) return
     setJavaDownloadError(null)
     setJavaDownload({ bytesReceived: 0, totalBytes: 0 })
     const unsubscribe = window.blossom.onDownloadProgress(setJavaDownload)
     try {
-      await window.blossom.downloadJava()
+      await window.blossom.downloadJava(minecraftVersion)
       refreshPrerequisites()
     } catch (err) {
       setJavaDownloadError(err instanceof Error ? err.message : 'Failed to download Java.')
@@ -74,9 +76,9 @@ export function ServerSoftwareStep() {
     }
   }
 
-  const needsJava = softwareId === 'fabric' || softwareId === 'forge' || softwareId === 'spigot'
+  // Every server needs Java to run, not just the ones whose installer needs it.
   const needsGit = softwareId === 'spigot'
-  const missingJava = needsJava && prerequisites && !prerequisites.java.available
+  const missingJava = prerequisites !== null && !prerequisites.java.available
   const missingGit = needsGit && prerequisites && !prerequisites.git.available
   const javaDownloadPct =
     javaDownload && javaDownload.totalBytes > 0
@@ -126,11 +128,10 @@ export function ServerSoftwareStep() {
           <div className="flex items-start gap-2">
             <AlertTriangle size={16} className="mt-0.5 shrink-0" />
             <span>
-              {missingJava && missingGit
-                ? 'Java and Git are required to build this server software and were not found on this machine.'
-                : missingJava
-                  ? 'Java is required to install this server software and was not found on this machine.'
-                  : 'Git is required to build Spigot and was not found on this machine.'}
+              {missingJava &&
+                `Minecraft ${minecraftVersion} needs Java ${prerequisites?.requiredJava}, which was not found on this machine. Blossom downloads it during generation, or you can fetch it now.`}
+              {missingJava && missingGit && ' '}
+              {missingGit && 'Git is required to build Spigot and was not found on this machine.'}
               {missingGit && (
                 <>
                   {' '}
@@ -161,7 +162,8 @@ export function ServerSoftwareStep() {
                   </div>
                   <p className="flex items-center gap-1.5 text-xs text-(--color-text-muted)">
                     <Loader2 size={12} className="animate-spin" />
-                    Downloading Java{javaDownloadPct !== null ? ` — ${javaDownloadPct}%` : '...'}
+                    Downloading Java {prerequisites?.requiredJava}
+                    {javaDownloadPct !== null ? ` — ${javaDownloadPct}%` : '...'}
                   </p>
                 </div>
               ) : (
@@ -171,7 +173,7 @@ export function ServerSoftwareStep() {
                   leftIcon={<Download size={14} />}
                   onClick={handleDownloadJava}
                 >
-                  Download Java now
+                  Download Java {prerequisites?.requiredJava} now
                 </Button>
               )}
               {javaDownloadError && <p className="text-xs text-(--color-danger)">{javaDownloadError}</p>}

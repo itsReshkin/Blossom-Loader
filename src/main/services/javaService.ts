@@ -2,6 +2,7 @@ import { spawn } from 'child_process'
 import { existsSync } from 'fs'
 import { readdir, rename, rm } from 'fs/promises'
 import { join } from 'path'
+import { parseJavaFeatureVersion } from '@shared/minecraftJava'
 import { getLatestPortableJre } from './adoptiumService'
 import { extractZip } from './archiveService'
 import { downloadFile, type DownloadProgress } from './downloadService'
@@ -52,43 +53,49 @@ export function checkGitAvailable(): Promise<JavaCheckResult> {
   return checkCommandAvailable('git', ['--version'], /git version ([\w.]+)/)
 }
 
-export function getPortableJavaExecutable(cacheRoot: string): string {
-  return join(cacheRoot, 'java-runtime', 'bin', 'java.exe')
+/** Runtimes are kept per feature version, since different Minecraft releases need different ones. */
+export function getPortableJavaExecutable(cacheRoot: string, featureVersion: number): string {
+  return join(cacheRoot, `java-runtime-${featureVersion}`, 'bin', 'java.exe')
 }
 
-export function isPortableJavaInstalled(cacheRoot: string): boolean {
-  return existsSync(getPortableJavaExecutable(cacheRoot))
+export function isPortableJavaInstalled(cacheRoot: string, featureVersion: number): boolean {
+  return existsSync(getPortableJavaExecutable(cacheRoot, featureVersion))
 }
 
-/**
- * Resolves which `java` command to use: the system installation if present, otherwise a
- * previously downloaded portable runtime, otherwise null (caller decides how to prompt).
- */
-export async function resolveJavaExecutable(cacheRoot: string): Promise<string | null> {
+/** True when the system Java is present and new enough for the given requirement. */
+export async function isSystemJavaSufficient(requiredFeatureVersion: number): Promise<boolean> {
   const system = await checkSystemJavaAvailable()
-  if (system.available) return 'java'
-  if (isPortableJavaInstalled(cacheRoot)) return getPortableJavaExecutable(cacheRoot)
-  return null
+  if (!system.available || !system.version) return false
+
+  const feature = parseJavaFeatureVersion(system.version)
+  return feature !== null && feature >= requiredFeatureVersion
 }
 
-export async function checkJavaAvailable(cacheRoot: string): Promise<JavaCheckResult> {
+export async function checkJavaAvailable(
+  cacheRoot: string,
+  requiredFeatureVersion: number
+): Promise<JavaCheckResult> {
   const system = await checkSystemJavaAvailable()
-  if (system.available) return system
-  return { available: isPortableJavaInstalled(cacheRoot) }
+  if (system.available && system.version) {
+    const feature = parseJavaFeatureVersion(system.version)
+    if (feature !== null && feature >= requiredFeatureVersion) return system
+  }
+  return { available: isPortableJavaInstalled(cacheRoot, requiredFeatureVersion) }
 }
 
 export async function downloadPortableJava(
   cacheRoot: string,
+  featureVersion: number,
   onProgress?: (progress: DownloadProgress) => void
 ): Promise<string> {
-  const info = await getLatestPortableJre()
+  const info = await getLatestPortableJre(featureVersion)
   const zipPath = join(cacheRoot, 'downloads', info.filename)
 
   if (!existsSync(zipPath)) {
     await downloadFile(info.url, zipPath, { algorithm: 'sha256', value: info.sha256 }, onProgress)
   }
 
-  const extractDir = join(cacheRoot, 'java-extract-tmp')
+  const extractDir = join(cacheRoot, `java-extract-tmp-${featureVersion}`)
   await rm(extractDir, { recursive: true, force: true })
   await extractZip(zipPath, extractDir)
 
@@ -98,14 +105,14 @@ export async function downloadPortableJava(
     throw new Error('Downloaded Java runtime archive had an unexpected layout.')
   }
 
-  const finalDir = join(cacheRoot, 'java-runtime')
+  const finalDir = join(cacheRoot, `java-runtime-${featureVersion}`)
   await rm(finalDir, { recursive: true, force: true })
   await rename(join(extractDir, jreFolder.name), finalDir)
   await rm(extractDir, { recursive: true, force: true })
 
-  const javaExe = getPortableJavaExecutable(cacheRoot)
+  const javaExe = getPortableJavaExecutable(cacheRoot, featureVersion)
   if (!existsSync(javaExe)) {
-    throw new Error('Java runtime was extracted but java.exe was not found.')
+    throw new Error(`Java ${featureVersion} runtime was extracted but java.exe was not found.`)
   }
   return javaExe
 }
