@@ -1,5 +1,8 @@
-import { autoUpdater } from 'electron-updater'
+// electron-updater is CommonJS; a named import breaks in the packaged ESM build.
+import electronUpdater from 'electron-updater'
 import type { UpdateStatus } from '@shared/updater'
+
+const { autoUpdater } = electronUpdater
 
 autoUpdater.autoDownload = false
 
