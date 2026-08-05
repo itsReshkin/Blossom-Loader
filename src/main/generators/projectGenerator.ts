@@ -1,6 +1,6 @@
 import { copyFile, mkdir, rm, writeFile } from 'fs/promises'
 import { existsSync } from 'fs'
-import { join, resolve, sep } from 'path'
+import { join } from 'path'
 import { SERVER_SOFTWARE_CATALOG } from '@shared/serverSoftware'
 import type { ServerSoftwareId } from '@shared/serverSoftware'
 import type { WizardAnswers } from '@shared/wizardConfig'
@@ -10,7 +10,8 @@ import { generateServerProperties } from './propertiesGenerator'
 import { generateEula } from './eulaGenerator'
 import { generateStartScriptBat, generateStartScriptSh } from './startScriptGenerator'
 import { generateReadme } from './readmeGenerator'
-import { sanitizeFileName, sanitizeFolderName } from './sanitizeFolderName'
+import { sanitizeFileName } from './sanitizeFolderName'
+import { resolveProjectPath } from './resolveProjectPath'
 import { installServerSoftware } from './installServerSoftware'
 import { generateOpsJson, generateWhitelistJson } from './playerFilesGenerator'
 import { resolveProfiles } from '../services/playerProfileService'
@@ -48,13 +49,7 @@ export async function generateProject(
     throw new Error('Project basics or server software are incomplete.')
   }
 
-  const folderName = sanitizeFolderName(projectName)
-  const installRoot = resolve(installDirectory)
-  const projectPath = resolve(installRoot, folderName)
-
-  if (!(projectPath + sep).startsWith(installRoot + sep)) {
-    throw new Error('Invalid install directory.')
-  }
+  const { folderName, projectPath } = resolveProjectPath(installDirectory, projectName)
 
   // Only a folder we created ourselves may be removed on failure — never one the user already had.
   const existedBeforehand = existsSync(projectPath)
