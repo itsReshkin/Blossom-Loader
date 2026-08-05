@@ -5,6 +5,9 @@ import type { UpdateStatus } from '@shared/updater'
 const { autoUpdater } = electronUpdater
 
 autoUpdater.autoDownload = false
+// We ship a normal NSIS installer, not a web installer. Opting out silences the deprecation
+// warning and keeps behaviour stable when this flips to true in a future electron-updater.
+autoUpdater.disableWebInstaller = true
 
 // electron-updater only reports whether it reused local blocks instead of refetching the whole
 // installer when a logger is attached, so route it to the main process console.
