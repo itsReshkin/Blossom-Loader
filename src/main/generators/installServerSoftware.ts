@@ -1,6 +1,6 @@
 import { existsSync } from 'fs'
 import { copyFile, mkdir, readdir, readFile, writeFile } from 'fs/promises'
-import { join } from 'path'
+import { dirname, join } from 'path'
 import type { InstallProgressEvent } from '@shared/installProgress'
 import type { ServerSoftwareId } from '@shared/serverSoftware'
 import { getServerDownload as getVanillaDownload } from '../services/mojangService'
@@ -11,7 +11,13 @@ import {
 } from '../services/fabricService'
 import { getRecommendedForgeVersion, getInstallerUrl as getForgeInstallerUrl } from '../services/forgeService'
 import { BUILD_TOOLS_URL } from '../services/spigotService'
-import { checkGitAvailable, resolveJavaExecutable } from '../services/javaService'
+import {
+  checkGitAvailable,
+  checkSystemJavaAvailable,
+  downloadPortableJava,
+  getPortableJavaExecutable,
+  isPortableJavaInstalled
+} from '../services/javaService'
 import { fetchSha1Sidecar } from '../services/mavenChecksum'
 import { downloadFile } from '../services/downloadService'
 import { runProcess } from '../services/processRunner'
@@ -29,7 +35,16 @@ export interface InstallServerSoftwareParams {
 export interface InstallServerSoftwareResult {
   windowsLaunchCommand: string
   unixLaunchCommand: string
+  /**
+   * Directory holding the Java runtime Blossom downloaded, or null when the machine already has a
+   * usable `java` on PATH. The generated start script prepends it so plain `java` resolves — which
+   * also covers Forge, whose own run.bat invokes `java` directly.
+   */
+  portableJavaBinDir: string | null
 }
+
+/** What an individual installer produces; the Java runtime is resolved once, above them. */
+type InstalledLaunchCommands = Omit<InstallServerSoftwareResult, 'portableJavaBinDir'>
 
 interface SoftwareContext {
   minecraftVersion: string
@@ -41,8 +56,8 @@ interface SoftwareContext {
 
 interface JavaSoftwareContext extends SoftwareContext {
   /** The `java` command to spawn locally for installers/BuildTools — system `java` or a
-   * downloaded portable runtime's absolute path. Never used in generated start scripts, which
-   * always reference the literal `java` command since they run on the eventual host, not here. */
+   * downloaded portable runtime's absolute path. Generated start scripts still say plain `java`;
+   * they get the runtime through a PATH entry instead, so the scripts stay portable. */
   javaCommand: string
 }
 
@@ -63,7 +78,30 @@ function genericLaunchCommand(jarName: string, memoryGB: number): string {
   return `java ${buildJvmFlags(memoryGB).join(' ')} -jar "${jarName}" nogui`
 }
 
-async function installVanilla(ctx: SoftwareContext): Promise<InstallServerSoftwareResult> {
+/**
+ * Makes sure a Java runtime exists before the server is generated, downloading a portable one when
+ * the machine has none. The generated server needs Java to run, not just the installers do, so this
+ * runs for every server software — otherwise start.bat fails with "java is not recognized".
+ */
+async function ensureJavaRuntime(
+  cacheRoot: string,
+  onProgress: (event: InstallProgressEvent) => void
+): Promise<{ javaCommand: string; portableJavaBinDir: string | null }> {
+  const system = await checkSystemJavaAvailable()
+  if (system.available) return { javaCommand: 'java', portableJavaBinDir: null }
+
+  if (!isPortableJavaInstalled(cacheRoot)) {
+    onProgress({ kind: 'status', message: 'No Java found on this machine. Downloading a runtime...' })
+    await downloadPortableJava(cacheRoot, (progress) =>
+      onProgress({ kind: 'download', label: 'Java runtime', ...progress })
+    )
+  }
+
+  const javaCommand = getPortableJavaExecutable(cacheRoot)
+  return { javaCommand, portableJavaBinDir: dirname(javaCommand) }
+}
+
+async function installVanilla(ctx: SoftwareContext): Promise<InstalledLaunchCommands> {
   const { minecraftVersion, projectPath, memoryGB, cacheRoot, onProgress } = ctx
   onProgress({ kind: 'status', message: 'Fetching Minecraft server download info...' })
   const info = await getVanillaDownload(minecraftVersion)
@@ -80,7 +118,7 @@ async function installVanilla(ctx: SoftwareContext): Promise<InstallServerSoftwa
   return { windowsLaunchCommand: command, unixLaunchCommand: command }
 }
 
-async function installPaper(ctx: SoftwareContext): Promise<InstallServerSoftwareResult> {
+async function installPaper(ctx: SoftwareContext): Promise<InstalledLaunchCommands> {
   const { minecraftVersion, projectPath, memoryGB, cacheRoot, onProgress } = ctx
   onProgress({ kind: 'status', message: 'Fetching Paper build info...' })
   const info = await getPaperDownload(minecraftVersion)
@@ -97,7 +135,7 @@ async function installPaper(ctx: SoftwareContext): Promise<InstallServerSoftware
   return { windowsLaunchCommand: command, unixLaunchCommand: command }
 }
 
-async function installFabric(ctx: JavaSoftwareContext): Promise<InstallServerSoftwareResult> {
+async function installFabric(ctx: JavaSoftwareContext): Promise<InstalledLaunchCommands> {
   const { minecraftVersion, projectPath, memoryGB, cacheRoot, javaCommand, onProgress } = ctx
   onProgress({ kind: 'status', message: 'Resolving Fabric loader version...' })
   const loaderVersion = await getLatestStableLoaderVersion(minecraftVersion)
@@ -153,7 +191,7 @@ async function patchForgeMemoryArgs(projectPath: string, memoryGB: number): Prom
   await writeFile(argsPath, [...lines, ...managedFlags].join('\n'), 'utf-8')
 }
 
-async function installForge(ctx: JavaSoftwareContext): Promise<InstallServerSoftwareResult> {
+async function installForge(ctx: JavaSoftwareContext): Promise<InstalledLaunchCommands> {
   const { minecraftVersion, projectPath, memoryGB, cacheRoot, javaCommand, onProgress } = ctx
   onProgress({ kind: 'status', message: 'Resolving Forge version...' })
   const forgeVersion = await getRecommendedForgeVersion(minecraftVersion)
@@ -192,7 +230,7 @@ async function installForge(ctx: JavaSoftwareContext): Promise<InstallServerSoft
   }
 }
 
-async function installSpigot(ctx: JavaSoftwareContext): Promise<InstallServerSoftwareResult> {
+async function installSpigot(ctx: JavaSoftwareContext): Promise<InstalledLaunchCommands> {
   const { minecraftVersion, projectPath, memoryGB, cacheRoot, javaCommand, onProgress } = ctx
   const gitCheck = await checkGitAvailable()
   if (!gitCheck.available) {
@@ -248,19 +286,23 @@ export async function installServerSoftware(
 ): Promise<InstallServerSoftwareResult> {
   const { softwareId } = params
 
-  if (softwareId === 'vanilla' || softwareId === 'paper') {
-    return softwareId === 'vanilla' ? installVanilla(params) : installPaper(params)
-  }
+  const { javaCommand, portableJavaBinDir } = await ensureJavaRuntime(params.cacheRoot, (event) =>
+    params.onProgress(event)
+  )
 
-  const javaCommand = await resolveJavaExecutable(params.cacheRoot)
-  if (!javaCommand) {
-    throw new Error(
-      `Java is required to install ${softwareId} but was not found on this machine. Download it from the Server Software step, or install a recent Java (e.g. Temurin 21) yourself and try again.`
-    )
-  }
-  const javaCtx: JavaSoftwareContext = { ...params, javaCommand }
+  const result = await installWith(softwareId, { ...params, javaCommand })
+  return { ...result, portableJavaBinDir }
+}
 
+async function installWith(
+  softwareId: ServerSoftwareId,
+  javaCtx: JavaSoftwareContext
+): Promise<Omit<InstallServerSoftwareResult, 'portableJavaBinDir'>> {
   switch (softwareId) {
+    case 'vanilla':
+      return installVanilla(javaCtx)
+    case 'paper':
+      return installPaper(javaCtx)
     case 'fabric':
       return installFabric(javaCtx)
     case 'forge':

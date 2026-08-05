@@ -103,7 +103,7 @@ async function writeProject(ctx: WriteProjectContext): Promise<GenerateProjectRe
   const memoryGB = answers.performance.memoryGB ?? 4
   const autoRestart = answers.performance.autoRestart ?? true
 
-  const { windowsLaunchCommand, unixLaunchCommand } = await installServerSoftware({
+  const { windowsLaunchCommand, unixLaunchCommand, portableJavaBinDir } = await installServerSoftware({
     softwareId,
     minecraftVersion,
     projectPath,
@@ -158,10 +158,14 @@ async function writeProject(ctx: WriteProjectContext): Promise<GenerateProjectRe
     writeFile(join(projectPath, 'server.properties'), generateServerProperties(answers), 'utf-8'),
     writeFile(
       join(projectPath, 'start.bat'),
-      generateStartScriptBat(windowsLaunchCommand, autoRestart),
+      generateStartScriptBat({ launchCommand: windowsLaunchCommand, autoRestart, portableJavaBinDir }),
       'utf-8'
     ),
-    writeFile(join(projectPath, 'start.sh'), generateStartScriptSh(unixLaunchCommand, autoRestart), 'utf-8'),
+    writeFile(
+      join(projectPath, 'start.sh'),
+      generateStartScriptSh({ launchCommand: unixLaunchCommand, autoRestart }),
+      'utf-8'
+    ),
     writeFile(
       join(projectPath, 'README.md'),
       generateReadme({
