@@ -1,6 +1,6 @@
 {
   "name": "blossom",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Blossom — create fully configured Minecraft servers through a guided Wizard.",
   "main": "./out/main/index.js",
   "author": "Reshkin",
