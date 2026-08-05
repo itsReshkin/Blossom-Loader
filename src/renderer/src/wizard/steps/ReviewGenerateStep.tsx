@@ -29,6 +29,7 @@ function SummaryRow({ label, value }: { label: string; value?: string }) {
 export function ReviewGenerateStep() {
   const answers = useWizardStore((state) => state.answers)
   const resetWizard = useWizardStore((state) => state.resetWizard)
+  const markGenerated = useWizardStore((state) => state.markGenerated)
   const [eulaAccepted, setEulaAccepted] = useState(false)
   const [state, setState] = useState<GenerationState>({ phase: 'idle' })
   const [savingTemplate, setSavingTemplate] = useState(false)
@@ -96,6 +97,8 @@ export function ReviewGenerateStep() {
 
       unsubscribeDownload()
       unsubscribeGenerate()
+      // These answers produced a server, so they stop counting as an unfinished draft.
+      markGenerated()
       setState({ phase: 'success', projectPath: result.projectPath })
     } catch (err) {
       unsubscribeDownload()

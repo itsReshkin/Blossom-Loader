@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ArrowRight, Blocks, FolderOpen, Trash2, X } from 'lucide-react'
 import { Button, Card, Description, PageTitle } from '@renderer/ui'
-import { useWizardStore } from '@renderer/store/wizardStore'
+import { canResumeDraft, useWizardStore } from '@renderer/store/wizardStore'
 import { useTranslation } from '@renderer/i18n'
 import { SERVER_SOFTWARE_CATALOG } from '@shared/serverSoftware'
 import type { ServerTemplate } from '@shared/templates'
@@ -19,7 +19,15 @@ export function Home({ onStartWizard }: HomeProps) {
   const [templates, setTemplates] = useState<ServerTemplate[]>([])
   const [servers, setServers] = useState<RegisteredServer[]>([])
   const updateAnswers = useWizardStore((state) => state.updateAnswers)
+  const resetWizard = useWizardStore((state) => state.resetWizard)
+  const draftName = useWizardStore((state) => state.answers.projectBasics.projectName)
+  const showResume = useWizardStore(canResumeDraft)
   const { t } = useTranslation()
+
+  const handleStartFresh = () => {
+    resetWizard()
+    onStartWizard()
+  }
 
   useEffect(() => {
     window.blossom?.listTemplates().then(setTemplates)
@@ -32,6 +40,9 @@ export function Home({ onStartWizard }: HomeProps) {
   }
 
   const handleUseTemplate = (template: ServerTemplate) => {
+    // Clear first, otherwise the template merges into whatever the last run left behind and the
+    // wizard resumes on its final step instead of the beginning.
+    resetWizard()
     // Templates saved before the Players step existed have no player list; keep the store's shape intact.
     const { players, ...rest } = template.answers
     updateAnswers({ ...rest, players: players ?? { entries: [] } })
@@ -57,9 +68,15 @@ export function Home({ onStartWizard }: HomeProps) {
             <Description>{t('home.tagline')}</Description>
           </div>
 
-          <Button size="lg" fullWidth rightIcon={<ArrowRight size={16} />} onClick={onStartWizard}>
+          <Button size="lg" fullWidth rightIcon={<ArrowRight size={16} />} onClick={handleStartFresh}>
             {t('home.createButton')}
           </Button>
+
+          {showResume && (
+            <Button variant="ghost" size="sm" fullWidth onClick={onStartWizard}>
+              {t('home.resumeDraft', { name: draftName ?? '' })}
+            </Button>
+          )}
         </Card>
 
         {servers.length > 0 && (
