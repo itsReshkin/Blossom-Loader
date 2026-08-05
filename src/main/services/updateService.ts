@@ -6,6 +6,15 @@ const { autoUpdater } = electronUpdater
 
 autoUpdater.autoDownload = false
 
+// electron-updater only reports whether it reused local blocks instead of refetching the whole
+// installer when a logger is attached, so route it to the main process console.
+autoUpdater.logger = {
+  info: (message) => console.log('[updater]', message),
+  warn: (message) => console.warn('[updater]', message),
+  error: (message) => console.error('[updater]', message),
+  debug: (message) => console.log('[updater:debug]', message)
+}
+
 export function initUpdateService(onStatus: (status: UpdateStatus) => void): void {
   autoUpdater.on('checking-for-update', () => onStatus({ state: 'checking' }))
   autoUpdater.on('update-available', (info) => onStatus({ state: 'available', version: info.version }))
@@ -26,5 +35,9 @@ export async function downloadUpdate(): Promise<void> {
 }
 
 export function quitAndInstall(): void {
-  autoUpdater.quitAndInstall()
+  // isSilent: run the NSIS installer without its wizard — the install directory is already known
+  // from the existing installation, so there is nothing to ask. Without this the user has to click
+  // through the full setup assistant on every update.
+  // isForceRunAfter: relaunch afterwards, which a silent install does not do on its own.
+  autoUpdater.quitAndInstall(true, true)
 }
