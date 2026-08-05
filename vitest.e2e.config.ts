@@ -1,6 +1,7 @@
 import { resolve } from 'path'
 import { defineConfig } from 'vitest/config'
 
+/** Runs the tests that hit real APIs and download real server jars. Never part of CI. */
 export default defineConfig({
   resolve: {
     alias: {
@@ -10,9 +11,7 @@ export default defineConfig({
   },
   test: {
     environment: 'node',
-    include: ['src/**/*.test.ts'],
-    // End-to-end tests hit real APIs and download a server jar, so they stay out of the default
-    // run and out of CI. Use `npm run test:e2e`.
-    exclude: ['**/node_modules/**', '**/*.e2e.test.ts']
+    include: ['src/**/*.e2e.test.ts'],
+    testTimeout: 900_000
   }
 })
