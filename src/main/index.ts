@@ -7,6 +7,8 @@ import { registerDownloadHandlers } from './ipc/downloadHandlers'
 import { registerGenerateHandlers } from './ipc/generateHandlers'
 import { registerUpdateHandlers } from './ipc/updateHandlers'
 import { registerTemplateHandlers } from './ipc/templateHandlers'
+import { registerSystemInfoHandlers } from './ipc/systemInfoHandlers'
+import { registerServerRegistryHandlers } from './ipc/serverRegistryHandlers'
 import { checkForUpdates } from './services/updateService'
 
 function createMainWindow(): void {
@@ -61,6 +63,8 @@ app.whenReady().then(() => {
   registerGenerateHandlers()
   registerUpdateHandlers()
   registerTemplateHandlers()
+  registerSystemInfoHandlers()
+  registerServerRegistryHandlers()
 
   createMainWindow()
 

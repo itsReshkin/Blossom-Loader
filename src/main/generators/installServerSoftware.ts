@@ -15,6 +15,7 @@ import { checkGitAvailable, resolveJavaExecutable } from '../services/javaServic
 import { fetchSha1Sidecar } from '../services/mavenChecksum'
 import { downloadFile } from '../services/downloadService'
 import { runProcess } from '../services/processRunner'
+import { buildJvmFlags } from './jvmFlags'
 
 export interface InstallServerSoftwareParams {
   softwareId: ServerSoftwareId
@@ -59,7 +60,7 @@ function throttledLogger(onProgress: (event: InstallProgressEvent) => void): (li
 }
 
 function genericLaunchCommand(jarName: string, memoryGB: number): string {
-  return `java -Xms${memoryGB}G -Xmx${memoryGB}G -jar "${jarName}" nogui`
+  return `java ${buildJvmFlags(memoryGB).join(' ')} -jar "${jarName}" nogui`
 }
 
 async function installVanilla(ctx: SoftwareContext): Promise<InstallServerSoftwareResult> {
@@ -140,12 +141,16 @@ async function patchForgeMemoryArgs(projectPath: string, memoryGB: number): Prom
   const argsPath = join(projectPath, 'user_jvm_args.txt')
   if (!existsSync(argsPath)) return
 
+  // Forge reads JVM args from this file rather than the start script, so the tuning goes here.
+  // Drop any flag we are about to set so re-running never produces duplicates.
+  const managedFlags = buildJvmFlags(memoryGB)
+  const managedPrefixes = managedFlags.map((flag) => flag.split('=')[0])
   const content = await readFile(argsPath, 'utf-8')
   const lines = content
     .split('\n')
-    .filter((line) => !line.trim().startsWith('-Xmx') && !line.trim().startsWith('-Xms'))
-  lines.push(`-Xms${memoryGB}G`, `-Xmx${memoryGB}G`)
-  await writeFile(argsPath, lines.join('\n'), 'utf-8')
+    .filter((line) => !managedPrefixes.some((prefix) => line.trim().startsWith(prefix)))
+
+  await writeFile(argsPath, [...lines, ...managedFlags].join('\n'), 'utf-8')
 }
 
 async function installForge(ctx: JavaSoftwareContext): Promise<InstallServerSoftwareResult> {

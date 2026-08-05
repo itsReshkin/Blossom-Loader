@@ -13,7 +13,7 @@ interface WizardStore {
 // Bump this whenever the shape of WizardAnswers changes. A version mismatch discards the
 // persisted draft instead of merging incompatible data in, which would otherwise crash any
 // step that reads a field the old draft doesn't have.
-const WIZARD_STORE_VERSION = 1
+const WIZARD_STORE_VERSION = 2
 
 export const useWizardStore = create<WizardStore>()(
   persist(

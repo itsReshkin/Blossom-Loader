@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { TitleBar, UpdateBanner } from '@renderer/ui'
+import { ErrorBoundary, TitleBar, UpdateBanner } from '@renderer/ui'
 import { Home } from '@renderer/pages/Home'
 import { WizardShell } from '@renderer/wizard/WizardShell'
 
@@ -12,11 +12,13 @@ function App() {
     <div className="flex h-screen flex-col">
       <TitleBar />
       <UpdateBanner />
-      {view === 'home' ? (
-        <Home onStartWizard={() => setView('wizard')} />
-      ) : (
-        <WizardShell onExit={() => setView('home')} />
-      )}
+      <ErrorBoundary>
+        {view === 'home' ? (
+          <Home onStartWizard={() => setView('wizard')} />
+        ) : (
+          <WizardShell onExit={() => setView('home')} />
+        )}
+      </ErrorBoundary>
     </div>
   )
 }

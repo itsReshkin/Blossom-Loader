@@ -1,25 +1,40 @@
 import { useEffect, useState } from 'react'
-import { ArrowRight, Blocks, Trash2 } from 'lucide-react'
+import { ArrowRight, Blocks, FolderOpen, Trash2, X } from 'lucide-react'
 import { Button, Card, Description, PageTitle } from '@renderer/ui'
 import { useWizardStore } from '@renderer/store/wizardStore'
 import { useTranslation } from '@renderer/i18n'
+import { SERVER_SOFTWARE_CATALOG } from '@shared/serverSoftware'
 import type { ServerTemplate } from '@shared/templates'
+import type { RegisteredServer } from '@shared/servers'
 
 interface HomeProps {
   onStartWizard: () => void
 }
 
+function softwareName(softwareId: string): string {
+  return SERVER_SOFTWARE_CATALOG.find((entry) => entry.id === softwareId)?.name ?? softwareId
+}
+
 export function Home({ onStartWizard }: HomeProps) {
   const [templates, setTemplates] = useState<ServerTemplate[]>([])
+  const [servers, setServers] = useState<RegisteredServer[]>([])
   const updateAnswers = useWizardStore((state) => state.updateAnswers)
   const { t } = useTranslation()
 
   useEffect(() => {
     window.blossom?.listTemplates().then(setTemplates)
+    window.blossom?.listServers().then(setServers)
   }, [])
 
+  const handleRemoveServer = async (id: string) => {
+    await window.blossom?.unregisterServer(id)
+    setServers((prev) => prev.filter((server) => server.id !== id))
+  }
+
   const handleUseTemplate = (template: ServerTemplate) => {
-    updateAnswers(template.answers)
+    // Templates saved before the Players step existed have no player list; keep the store's shape intact.
+    const { players, ...rest } = template.answers
+    updateAnswers({ ...rest, players: players ?? { entries: [] } })
     onStartWizard()
   }
 
@@ -46,6 +61,45 @@ export function Home({ onStartWizard }: HomeProps) {
             {t('home.createButton')}
           </Button>
         </Card>
+
+        {servers.length > 0 && (
+          <Card className="flex flex-col gap-2 p-4">
+            <Description className="px-1">Your servers</Description>
+            {servers.map((server) => (
+              <div
+                key={server.id}
+                className="flex items-center gap-3 rounded-(--radius-md) px-3 py-2 hover:bg-(--color-surface-raised)"
+              >
+                <div className="flex min-w-0 flex-1 flex-col">
+                  <span className="truncate text-sm text-(--color-text)">{server.name}</span>
+                  <span className="text-xs text-(--color-text-muted)">
+                    {softwareName(server.softwareId)} {server.minecraftVersion} · Port {server.serverPort}
+                  </span>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => window.blossom?.showItemInFolder(server.path)}
+                  aria-label={`Open folder for ${server.name}`}
+                  className="text-(--color-text-muted) hover:text-(--color-text)"
+                >
+                  <FolderOpen size={15} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleRemoveServer(server.id)}
+                  aria-label={`Remove ${server.name} from the list`}
+                  className="text-(--color-text-muted) hover:text-(--color-danger)"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+            ))}
+            <Description className="px-1 text-xs">
+              Removing a server here only forgets it in Blossom. The files stay on disk.
+            </Description>
+          </Card>
+        )}
 
         {templates.length > 0 && (
           <Card className="flex flex-col gap-2 p-4">

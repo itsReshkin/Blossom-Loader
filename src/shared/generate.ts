@@ -2,6 +2,7 @@ import { z } from 'zod'
 import {
   NetworkingSchema,
   PerformanceSchema,
+  PlayersSchema,
   ProjectBasicsSchema,
   ServerIdentitySchema,
   ServerSoftwareSelectionSchema,
@@ -40,6 +41,7 @@ export const GenerateProjectParamsSchema = z.object({
     worldSettings: WorldSettingsSchema.partial(),
     performance: PerformanceSchema.partial(),
     networking: NetworkingSchema.partial(),
+    players: PlayersSchema,
     plugins: z.object({ selected: z.array(SelectedPluginSchema) })
   }),
   eulaAccepted: z.boolean(),

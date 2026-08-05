@@ -3,6 +3,7 @@ import { BookmarkPlus, CheckCircle2, FolderOpen, Loader2 } from 'lucide-react'
 import { Button, Card, Description, SectionTitle } from '@renderer/ui'
 import { useWizardStore } from '@renderer/store/wizardStore'
 import { SERVER_SOFTWARE_CATALOG } from '@shared/serverSoftware'
+import { ConnectionInfo } from '../ConnectionInfo'
 
 interface DownloadInfo {
   label: string
@@ -85,6 +86,14 @@ export function ReviewGenerateStep() {
       setState({ phase: 'working', status: 'Preparing server software...', logTail: [] })
       const result = await window.blossom.generateProject({ answers, eulaAccepted: true, pluginFiles })
 
+      await window.blossom.registerServer({
+        name: answers.projectBasics.projectName ?? 'Minecraft Server',
+        path: result.projectPath,
+        softwareId,
+        minecraftVersion,
+        serverPort: answers.networking.serverPort ?? 25565
+      })
+
       unsubscribeDownload()
       unsubscribeGenerate()
       setState({ phase: 'success', projectPath: result.projectPath })
@@ -109,7 +118,8 @@ export function ReviewGenerateStep() {
           serverIdentity: answers.serverIdentity,
           worldSettings: answers.worldSettings,
           performance: answers.performance,
-          networking: answers.networking
+          networking: answers.networking,
+          players: answers.players
         }
       })
       setTemplateSaved(true)
@@ -135,6 +145,9 @@ export function ReviewGenerateStep() {
           <SectionTitle>Your server is ready</SectionTitle>
           <Description className="mt-1 break-all">{state.projectPath}</Description>
         </div>
+
+        <ConnectionInfo serverPort={answers.networking.serverPort ?? 25565} />
+
         <div className="flex gap-3">
           <Button variant="secondary" leftIcon={<FolderOpen size={16} />} onClick={handleOpenFolder}>
             Open Folder
@@ -166,6 +179,14 @@ export function ReviewGenerateStep() {
         />
         {selectedPlugins.length > 0 && (
           <SummaryRow label="Plugins / Mods" value={selectedPlugins.map((entry) => entry.name).join(', ')} />
+        )}
+        {answers.players.entries.length > 0 && (
+          <SummaryRow
+            label="Players"
+            value={answers.players.entries
+              .map((entry) => (entry.isOperator ? `${entry.username} (op)` : entry.username))
+              .join(', ')}
+          />
         )}
         <SummaryRow label="MOTD" value={answers.serverIdentity.motd} />
         <SummaryRow label="Max Players" value={String(answers.serverIdentity.maxPlayers ?? '')} />

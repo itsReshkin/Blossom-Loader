@@ -7,6 +7,8 @@ import type { PrerequisitesCheckResult } from '@shared/prerequisites'
 import type { PluginSearchParams, PluginSearchResult } from '@shared/pluginSearch'
 import type { UpdateStatus } from '@shared/updater'
 import type { SaveTemplateParams, ServerTemplate } from '@shared/templates'
+import type { LocalNetworkAddress, PortCheckResult, SystemMemoryInfo } from '@shared/systemInfo'
+import type { RegisteredServer, RegisterServerParams } from '@shared/servers'
 
 const api = {
   getAppVersion: (): Promise<string> => ipcRenderer.invoke(IpcChannel.AppGetVersion),
@@ -50,7 +52,15 @@ const api = {
   listTemplates: (): Promise<ServerTemplate[]> => ipcRenderer.invoke(IpcChannel.TemplatesList),
   saveTemplate: (params: SaveTemplateParams): Promise<ServerTemplate> =>
     ipcRenderer.invoke(IpcChannel.TemplatesSave, params),
-  deleteTemplate: (id: string): Promise<void> => ipcRenderer.invoke(IpcChannel.TemplatesDelete, id)
+  deleteTemplate: (id: string): Promise<void> => ipcRenderer.invoke(IpcChannel.TemplatesDelete, id),
+  listServers: (): Promise<RegisteredServer[]> => ipcRenderer.invoke(IpcChannel.ServersList),
+  registerServer: (params: RegisterServerParams): Promise<RegisteredServer> =>
+    ipcRenderer.invoke(IpcChannel.ServersRegister, params),
+  unregisterServer: (id: string): Promise<void> => ipcRenderer.invoke(IpcChannel.ServersUnregister, id),
+  getMemoryInfo: (): Promise<SystemMemoryInfo> => ipcRenderer.invoke(IpcChannel.SystemGetMemory),
+  checkPort: (port: number): Promise<PortCheckResult> => ipcRenderer.invoke(IpcChannel.SystemCheckPort, port),
+  getLocalNetworkAddresses: (): Promise<LocalNetworkAddress[]> =>
+    ipcRenderer.invoke(IpcChannel.SystemGetLocalAddresses)
 }
 
 contextBridge.exposeInMainWorld('blossom', api)

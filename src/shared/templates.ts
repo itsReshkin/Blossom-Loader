@@ -2,6 +2,7 @@ import { z } from 'zod'
 import {
   NetworkingSchema,
   PerformanceSchema,
+  PlayersSchema,
   ServerIdentitySchema,
   ServerSoftwareSelectionSchema,
   WorldSettingsSchema
@@ -14,7 +15,8 @@ export const TemplateAnswersSchema = z.object({
   serverIdentity: ServerIdentitySchema.partial(),
   worldSettings: WorldSettingsSchema.partial(),
   performance: PerformanceSchema.partial(),
-  networking: NetworkingSchema.partial()
+  networking: NetworkingSchema.partial(),
+  players: PlayersSchema.optional()
 })
 export type TemplateAnswers = z.infer<typeof TemplateAnswersSchema>
 

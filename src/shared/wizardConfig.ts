@@ -60,6 +60,22 @@ export const NetworkingSchema = z.object({
 })
 export type Networking = z.infer<typeof NetworkingSchema>
 
+export const PlayerEntrySchema = z.object({
+  username: z
+    .string()
+    .trim()
+    .min(3, 'Minecraft names are at least 3 characters')
+    .max(16, 'Minecraft names are at most 16 characters')
+    .regex(/^[a-zA-Z0-9_]+$/, 'Only letters, numbers and _ are allowed'),
+  isOperator: z.boolean()
+})
+export type PlayerEntry = z.infer<typeof PlayerEntrySchema>
+
+export const PlayersSchema = z.object({
+  entries: z.array(PlayerEntrySchema)
+})
+export type Players = z.infer<typeof PlayersSchema>
+
 export interface SelectedPlugin {
   slug: string
   name: string
@@ -76,6 +92,7 @@ export interface WizardAnswers {
   worldSettings: Partial<WorldSettings>
   performance: Partial<Performance>
   networking: Partial<Networking>
+  players: Players
   plugins: PluginSelection
 }
 
@@ -105,6 +122,9 @@ export const initialWizardAnswers: WizardAnswers = {
   networking: {
     serverPort: 25565,
     onlineMode: true
+  },
+  players: {
+    entries: []
   },
   plugins: {
     selected: []

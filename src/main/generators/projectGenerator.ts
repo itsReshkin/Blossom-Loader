@@ -1,7 +1,10 @@
-import { copyFile, mkdir, writeFile } from 'fs/promises'
+import { copyFile, mkdir, rm, writeFile } from 'fs/promises'
+import { existsSync } from 'fs'
 import { join, resolve, sep } from 'path'
 import { SERVER_SOFTWARE_CATALOG } from '@shared/serverSoftware'
-import type { GenerateProjectParams, GenerateProjectResult } from '@shared/generate'
+import type { ServerSoftwareId } from '@shared/serverSoftware'
+import type { WizardAnswers } from '@shared/wizardConfig'
+import type { AddonFile, GenerateProjectParams, GenerateProjectResult } from '@shared/generate'
 import type { InstallProgressEvent } from '@shared/installProgress'
 import { generateServerProperties } from './propertiesGenerator'
 import { generateEula } from './eulaGenerator'
@@ -9,6 +12,8 @@ import { generateStartScriptBat, generateStartScriptSh } from './startScriptGene
 import { generateReadme } from './readmeGenerator'
 import { sanitizeFileName, sanitizeFolderName } from './sanitizeFolderName'
 import { installServerSoftware } from './installServerSoftware'
+import { generateOpsJson, generateWhitelistJson } from './playerFilesGenerator'
+import { resolveProfiles } from '../services/playerProfileService'
 
 export type { GenerateProjectParams, GenerateProjectResult }
 
@@ -51,6 +56,53 @@ export async function generateProject(
     throw new Error('Invalid install directory.')
   }
 
+  // Only a folder we created ourselves may be removed on failure — never one the user already had.
+  const existedBeforehand = existsSync(projectPath)
+  try {
+    return await writeProject({
+      answers,
+      eulaAccepted,
+      pluginFiles,
+      folderName,
+      projectPath,
+      softwareId,
+      minecraftVersion,
+      cacheRoot,
+      onProgress
+    })
+  } catch (error) {
+    if (!existedBeforehand) {
+      await rm(projectPath, { recursive: true, force: true }).catch(() => undefined)
+    }
+    throw error
+  }
+}
+
+interface WriteProjectContext {
+  answers: WizardAnswers
+  eulaAccepted: boolean
+  pluginFiles: AddonFile[]
+  folderName: string
+  projectPath: string
+  softwareId: ServerSoftwareId
+  minecraftVersion: string
+  cacheRoot: string
+  onProgress?: (event: InstallProgressEvent) => void
+}
+
+async function writeProject(ctx: WriteProjectContext): Promise<GenerateProjectResult> {
+  const {
+    answers,
+    eulaAccepted,
+    pluginFiles,
+    folderName,
+    projectPath,
+    softwareId,
+    minecraftVersion,
+    cacheRoot,
+    onProgress
+  } = ctx
+
   await mkdir(projectPath, { recursive: true })
 
   const memoryGB = answers.performance.memoryGB ?? 4
@@ -82,9 +134,31 @@ export async function generateProject(
 
   const software = SERVER_SOFTWARE_CATALOG.find((entry) => entry.id === softwareId)
 
+  const playerEntries = answers.players.entries
+  let playerFileWrites: Promise<void>[] = []
+
+  if (playerEntries.length > 0) {
+    onProgress?.({ kind: 'status', message: 'Looking up player accounts...' })
+    const onlineMode = answers.networking.onlineMode ?? true
+    const profiles = await resolveProfiles(
+      playerEntries.map((entry) => entry.username),
+      onlineMode
+    )
+    const operatorNames = new Set(
+      playerEntries.filter((entry) => entry.isOperator).map((entry) => entry.username.toLowerCase())
+    )
+    const operators = profiles.filter((profile) => operatorNames.has(profile.name.toLowerCase()))
+
+    playerFileWrites = [
+      writeFile(join(projectPath, 'whitelist.json'), generateWhitelistJson(profiles), 'utf-8'),
+      writeFile(join(projectPath, 'ops.json'), generateOpsJson(operators), 'utf-8')
+    ]
+  }
+
   onProgress?.({ kind: 'status', message: 'Writing server configuration...' })
 
   await Promise.all([
+    ...playerFileWrites,
     writeFile(join(projectPath, 'eula.txt'), generateEula(eulaAccepted), 'utf-8'),
     writeFile(join(projectPath, 'server.properties'), generateServerProperties(answers), 'utf-8'),
     writeFile(

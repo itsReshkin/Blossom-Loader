@@ -18,7 +18,13 @@ export const IpcChannel = {
   UpdateStatus: 'update:status',
   TemplatesList: 'templates:list',
   TemplatesSave: 'templates:save',
-  TemplatesDelete: 'templates:delete'
+  TemplatesDelete: 'templates:delete',
+  ServersList: 'servers:list',
+  ServersRegister: 'servers:register',
+  ServersUnregister: 'servers:unregister',
+  SystemGetMemory: 'system:get-memory',
+  SystemCheckPort: 'system:check-port',
+  SystemGetLocalAddresses: 'system:get-local-addresses'
 } as const
 
 export type IpcChannel = (typeof IpcChannel)[keyof typeof IpcChannel]

@@ -13,6 +13,7 @@ import { ServerIdentityStep } from './steps/ServerIdentityStep'
 import { WorldSettingsStep } from './steps/WorldSettingsStep'
 import { PerformanceStep } from './steps/PerformanceStep'
 import { NetworkingStep } from './steps/NetworkingStep'
+import { PlayersStep } from './steps/PlayersStep'
 import { ReviewGenerateStep } from './steps/ReviewGenerateStep'
 import { WizardStepDefinition } from './types'
 
@@ -60,6 +61,13 @@ export const wizardSteps: WizardStepDefinition[] = [
     label: 'Networking',
     Component: NetworkingStep,
     isComplete: (answers) => NetworkingSchema.safeParse(answers.networking).success
+  },
+  {
+    id: 'players',
+    label: 'Players',
+    Component: PlayersStep,
+    // Any number of players is valid, including none — unless the whitelist would lock everyone out.
+    isComplete: (answers) => answers.serverIdentity.whitelist !== true || answers.players.entries.length > 0
   },
   {
     id: 'review-generate',
