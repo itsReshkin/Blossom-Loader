@@ -1,5 +1,6 @@
+import { REQUEST_HEADERS } from '../core/userAgent'
+
 const ADOPTIUM_API_BASE = 'https://api.adoptium.net/v3'
-const REQUEST_HEADERS = { 'User-Agent': 'Blossom/0.1.0 (Minecraft server creation wizard)' }
 const JAVA_FEATURE_VERSION = 21
 
 interface AdoptiumAsset {

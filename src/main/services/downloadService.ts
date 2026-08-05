@@ -2,6 +2,7 @@ import { createHash } from 'crypto'
 import { createWriteStream } from 'fs'
 import { mkdir, rm } from 'fs/promises'
 import { dirname } from 'path'
+import { REQUEST_HEADERS } from '../core/userAgent'
 
 export interface DownloadProgress {
   bytesReceived: number
@@ -21,9 +22,7 @@ export async function downloadFile(
 ): Promise<void> {
   await mkdir(dirname(destinationPath), { recursive: true })
 
-  const response = await fetch(url, {
-    headers: { 'User-Agent': 'Blossom/0.1.0 (Minecraft server creation wizard)' }
-  })
+  const response = await fetch(url, { headers: REQUEST_HEADERS })
   if (!response.ok || !response.body) {
     throw new Error(`Download failed: ${response.status} ${response.statusText}`)
   }

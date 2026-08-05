@@ -1,5 +1,6 @@
+import { USER_AGENT as MODRINTH_USER_AGENT } from '../core/userAgent'
+
 const MODRINTH_API_BASE = 'https://api.modrinth.com/v2'
-const MODRINTH_USER_AGENT = 'Blossom/0.1.0 (Minecraft server creation wizard)'
 
 interface ModrinthVersionFile {
   url: string

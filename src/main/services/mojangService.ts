@@ -1,5 +1,6 @@
+import { REQUEST_HEADERS } from '../core/userAgent'
+
 const VERSION_MANIFEST_URL = 'https://piston-meta.mojang.com/mc/game/version_manifest_v2.json'
-const REQUEST_HEADERS = { 'User-Agent': 'Blossom/0.1.0 (Minecraft server creation wizard)' }
 
 interface MojangManifestEntry {
   id: string

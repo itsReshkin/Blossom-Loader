@@ -1,5 +1,6 @@
+import { USER_AGENT as PAPER_USER_AGENT } from '../core/userAgent'
+
 const PAPER_API_BASE = 'https://fill.papermc.io/v3'
-const PAPER_USER_AGENT = 'Blossom/0.1.0 (Minecraft server creation wizard)'
 
 interface PaperVersionsResponse {
   versions: Record<string, string[]>

@@ -1,5 +1,6 @@
+import { REQUEST_HEADERS } from '../core/userAgent'
+
 const FABRIC_META_BASE = 'https://meta.fabricmc.net/v2'
-const REQUEST_HEADERS = { 'User-Agent': 'Blossom/0.1.0 (Minecraft server creation wizard)' }
 
 interface FabricLoaderEntry {
   loader: { version: string; stable: boolean }

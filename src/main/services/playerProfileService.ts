@@ -1,7 +1,7 @@
 import { createHash } from 'crypto'
+import { REQUEST_HEADERS } from '../core/userAgent'
 
 const PROFILE_URL = 'https://api.mojang.com/users/profiles/minecraft'
-const REQUEST_HEADERS = { 'User-Agent': 'Blossom/0.1.0 (Minecraft server creation wizard)' }
 
 export interface PlayerProfile {
   uuid: string
