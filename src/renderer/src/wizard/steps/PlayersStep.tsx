@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { AlertTriangle, Plus, Shield, Trash2 } from 'lucide-react'
 import { Button, Card, Description, Input, SectionTitle } from '@renderer/ui'
 import { useWizardStore } from '@renderer/store/wizardStore'
-import { PlayerEntrySchema } from '@shared/wizardConfig'
+import { createPlayerEntry, PlayerEntrySchema } from '@shared/wizardConfig'
 
 export function PlayersStep() {
   const players = useWizardStore((state) => state.answers.players)
@@ -17,7 +17,7 @@ export function PlayersStep() {
   const setEntries = (next: typeof entries) => updateAnswers({ players: { entries: next } })
 
   const handleAdd = () => {
-    const parsed = PlayerEntrySchema.safeParse({ username: draft, isOperator: false })
+    const parsed = PlayerEntrySchema.safeParse(createPlayerEntry(draft))
     if (!parsed.success) {
       setError(parsed.error.issues[0]?.message)
       return
@@ -52,7 +52,9 @@ export function PlayersStep() {
       <div>
         <SectionTitle>Players</SectionTitle>
         <Description className="mt-1">
-          Add yourself and your friends. Operators can run admin commands like /gamemode and /stop.
+          Add yourself and your friends. Everyone you add becomes an operator, so they can run admin
+          commands like /gamemode and /give. Switch Operator off for players who should just be allowed
+          in.
         </Description>
       </div>
 

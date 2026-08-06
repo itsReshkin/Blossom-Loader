@@ -76,6 +76,14 @@ export const PlayersSchema = z.object({
 })
 export type Players = z.infer<typeof PlayersSchema>
 
+/**
+ * A newly added player is an operator by default. A whitelist entry on its own does nothing unless
+ * the whitelist is switched on, so without this, adding someone had no effect in-game at all.
+ */
+export function createPlayerEntry(username: string): PlayerEntry {
+  return { username, isOperator: true }
+}
+
 export interface SelectedPlugin {
   slug: string
   name: string
